@@ -1,6 +1,6 @@
 # Projet Bayes : Seeds - Random effects logistic regression
 
-Zakariae MAAYZOU, Souhail LYAMANI, Anass EL MOUBARAKI, Elyas BENYAMINA
+Zakariae MAAYZOU, Souhail LYAMANI, Anass EL MOUBARAKI, Elyas BENYAMINA\
 Encadré par: Mathieu RIBATET
 
 ##  Introduction
