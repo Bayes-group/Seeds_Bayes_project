@@ -1,0 +1,352 @@
+---
+title: "Seeds"
+author: "Souhail Lyamani, Zakariae Maayzou, Anass EL Moubaraki, Elyas Benyamina "
+date: "13 mars 2023"
+output: html_document
+---
+# Préparation des données :
+```{r}
+"N" <- 21
+"r" <- c(10, 23, 23, 26, 17, 5, 53, 55, 32, 46, 10, 8, 10, 8, 23, 0, 3, 22, 15, 32, 3)
+"n" <- c(39, 62, 81, 51, 39, 6, 74, 72, 51, 79, 13, 16, 30, 28, 45,  4, 12, 41, 30, 51, 7)
+"x1" <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+"x2" <- c(0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1)
+```
+
+# Initialisation des grandeurs en question:
+```{r}
+initial_alpha0 <- 0
+initial_alpha1 <- 0
+initial_alpha2 <- 0
+initial_alpha12 <- 0
+initial_sigma <- 1/10
+initial_b <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+```
+
+# Importation des packages nécessaires pour notre étude:
+```{r}
+library(boot)
+library(coda)
+library(factoextra)
+```
+
+# Échantillonneur Hastings-within-Gibbs : 
+
+Le code suivant implémente un algorithme de chaîne de Markov pour ajuster un modèle de régression logistique mixte bayésienne. La régression logistique mixte est une technique statistique couramment utilisée pour analyser des données longitudinales ou des données de survie. Elle permet de modéliser la probabilité de succès ou d'échec d'un événement en fonction de variables explicatives continues ou catégorielles, tout en prenant en compte l'effet de variables latentes ou cachées. L'algorithme de chaîne de Markov est utilisé pour échantillonner de manière itérative les paramètres du modèle et estime la distribution a posteriori des paramètres. Ce code est une implémentation pratique de cette technique et permet de modéliser des données à l'aide de la régression logistique mixte bayésienne.
+
+
+```{r}
+seeds <- function(nchain, initial_alpha0, initial_alpha1, initial_alpha2, initial_alpha12, initial_sigma, initial_b, proposition_sd, x1, x2, N)
+{
+  
+  alpha0 <- initial_alpha0
+  alpha1 <- initial_alpha1
+  alpha2 <- initial_alpha2
+  alpha12 <- initial_alpha12
+  sigma <- initial_sigma
+  b <- initial_b
+  
+  p <- plogis(alpha0 + alpha1 * x1 + alpha2 * x2 + alpha12 * x1 * x2 + b)
+  
+  chain <- matrix(NA, nchain + 1, 5)
+  b_chain <- matrix(NA, nchain + 1, N)
+  
+  chain[1,1] <- initial_alpha0
+  chain[1,2] <- initial_alpha1
+  chain[1,3] <- initial_alpha2
+  chain[1,4] <- initial_alpha12
+  chain[1,5] <- initial_sigma
+  b_chain[1,] <- initial_b
+  
+  acc_rates <- rep(0,4)
+  
+  for (i in 1:nchain)
+  {
+    # Mise à jour de alpha0
+    proposition <- rnorm(1, alpha0, proposition_sd[1])
+    proposition_p <- plogis(proposition + alpha1 * x1 + alpha2 * x2 + alpha12 * x1 * x2 + b)
+    
+    top <- - ((proposition^2) / (2 * 1e6)) + sum(r * log(proposition_p)) + sum((n-r) * log(1 - proposition_p))
+    bottom <- - ((alpha0^2) / (2 * 1e6)) + sum(r * log(p)) + sum((n-r) * log(1 - p))
+    
+    acc_prob <- exp(top - bottom)
+    
+    if (runif(1) < acc_prob){
+      alpha0 <- proposition
+      p <- proposition_p
+      acc_rates[1] <- acc_rates[1]+1
+    }
+    
+    # Mise à jour de alpha1
+    proposition <- rnorm(1, alpha1, proposition_sd[2])
+    proposition_p <- plogis(alpha0 + proposition * x1 + alpha2 * x2 + alpha12 * x1 * x2 + b)
+    
+    top <- - ((proposition^2) / (2 * 1e6)) + sum(r * log(proposition_p)) + sum((n-r) * log(1 - proposition_p))
+    bottom <- - ((alpha1^2) / (2 * 1e6)) + sum(r * log(p)) + sum((n-r) * log(1 - p))
+    
+    acc_prob <- exp(top - bottom)
+    
+    if (runif(1) < acc_prob){
+      alpha1 <- proposition
+      p <- proposition_p
+      acc_rates[2] <- acc_rates[2]+1
+    }
+    
+    # Mise à jour de alpha2
+    proposition <- rnorm(1, alpha2, proposition_sd[3])
+    proposition_p <- plogis(alpha0 + alpha1 * x1 + proposition * x2 + alpha12 * x1 * x2 + b)
+    
+    top <- - ((proposition^2) / (2 * 1e6)) + sum(r * log(proposition_p)) + sum((n-r) * log(1 - proposition_p))
+    bottom <- - ((alpha2^2) / (2 * 1e6)) + sum(r * log(p)) + sum((n-r) * log(1 - p))
+    
+    acc_prob <- exp(top - bottom)
+    
+    if (runif(1) < acc_prob){
+      alpha2 <- proposition
+      p <- proposition_p
+      acc_rates[3] <- acc_rates[3]+1
+    }
+    
+    # Mise à jour de alpha12
+    proposition <- rnorm(1, alpha12, proposition_sd[4])
+    proposition_p <- plogis(alpha0 + alpha1 * x1 + alpha2 * x2 + proposition * x1 * x2 + b)
+    
+    top <- - ((proposition^2) / (2 * 1e6)) + sum(r * log(proposition_p)) + sum((n-r) * log(1 - proposition_p))
+    bottom <- - ((alpha12^2) / (2 * 1e6)) + sum(r * log(p)) + sum((n-r) * log(1 - p))
+    
+    acc_prob <- exp(top - bottom)
+
+    if (runif(1) < acc_prob){
+      alpha12 <- proposition
+      p <- proposition_p
+      acc_rates[4] <- acc_rates[4]+1
+    }
+    
+    # Mise à jour de sigma
+    sigma <- 1 / rgamma(1, shape = 10e-3 + N / 2, scale = 1e-3 + 0.5 * sum(b^2)) #change parameters
+    
+    # Mise à jour de b
+    for (j in 1:N)
+    {
+      proposition <- rnorm(1, b[j], proposition_sd[5])
+      proposition_p_j <- plogis(alpha0 + alpha1 * x1[j] + alpha2 * x2[j] + alpha12 * x1[j] * x2[j] + proposition)
+      
+      top <- - (proposition^2 / (2 * sigma)) + r[j] * log(proposition_p_j) + (n[j] - r[j]) * log(1 - proposition_p_j)
+      bottom <- - (b[j]^2 / (2 * sigma)) + r[j] * log(p[j]) + (n[j] - r[j]) * log(1 - p[j])
+      
+      acc_prob <- exp(top - bottom)
+      
+      if (runif(1) < acc_prob){
+        b[j] <- proposition
+        p[j] <- proposition_p_j
+      }
+    }
+    #Mise à jour de la chaine
+    chain[i+1,] <- c(alpha0, alpha1, alpha2, alpha12, sigma)
+    b_chain[i+1,] <- b
+  }
+  my_list <- list("chain" = chain, "b_chain" = b_chain, "acc_rates" = acc_rates)
+  return(my_list)
+}
+```
+
+
+```{r}
+l <- seeds(1e4, initial_alpha0, initial_alpha1, initial_alpha2, initial_alpha12, initial_alpha12, initial_b, proposition_sd = c(0.25, 0.5, 0.3, 0.5, 0.3), x1, x2, N)
+```
+
+# Graphiques pertinents pour la visualisation de nos résultats :
+
+## $\alpha_0$
+
+Ce code est destiné à tracer un graphique de la densité des échantillons générés à partir d'une chaîne de Markov de Monte-Carlo (MCMC). Le graphique permet de visualiser la distribution des échantillons générés pour une variable spécifique, en l'occurrence la variable $\alpha_0$ .
+
+```{r}
+burnin <- (1:1500)
+plot(l$chain[-burnin,][,1], type = "l", main = "")
+plot(density(l$chain[-burnin,][,1]), type = "l", main = "Conditional density of alpha0")
+    
+```
+
+```{r}
+sprintf(" Pour alpha0, le taux d'acceptation est  : %s", l$acc_rates[1]/100)
+moy_alpha0 = mean(l$chain[,1])
+sprintf(" Pour alpha0, la moyenne empirique est : %s", moy_alpha0)
+std_alpha0 = sd(l$chain[,1])
+sprintf(" Pour alpha0, l'écart-type empirique est : %s", std_alpha0)
+```
+.
+
+
+
+## $\alpha_1$ 
+
+Ce code est destiné à tracer un graphique de la densité des échantillons générés à partir d'une chaîne de Markov de Monte-Carlo (MCMC). Le graphique permet de visualiser la distribution des échantillons générés pour une variable spécifique, en l'occurrence la variable $\alpha_1$ . 
+
+```{r}
+plot(l$chain[-burnin,][,2], type = "l", main = "")
+plot(density(l$chain[-burnin,][,2]), type = "l", main = "Conditional density of alpha1")
+```
+
+```{r}
+sprintf(" Pour alpha1, le taux d'acceptation est  : %s", l$acc_rates[2]/100)
+moy_alpha1 = mean(l$chain[,2])
+sprintf(" Pour alpha1, la moyenne empirique est : %s", moy_alpha1)
+std_alpha1 = sd(l$chain[,2])
+sprintf(" Pour alpha1, l'écart-type empirique est : %s", std_alpha1)
+```
+
+## $\alpha_2$
+
+Ce code est destiné à tracer un graphique de la densité des échantillons générés à partir d'une chaîne de Markov de Monte-Carlo (MCMC). Le graphique permet de visualiser la distribution des échantillons générés pour une variable spécifique, en l'occurrence la variable $\alpha_2$ .
+```{r}
+plot(l$chain[-burnin,][,3], type = "l", main = "")
+plot(density(l$chain[-burnin,][,3]), type = "l", main = "Conditional density of alpha2")
+```
+
+```{r}
+sprintf(" Pour alpha2, le taux d'acceptation est  : %s", l$acc_rates[3]/100)
+moy_alpha2 = mean(l$chain[,3])
+sprintf(" Pour alpha2, la moyenne empirique est : %s", moy_alpha2)
+std_alpha2 = sd(l$chain[,3])
+sprintf(" Pour alpha2, l'écart-type empirique est : %s", std_alpha2)
+```
+
+## $\alpha_{12}$ 
+
+Ce code est destiné à tracer un graphique de la densité des échantillons générés à partir d'une chaîne de Markov de Monte-Carlo (MCMC). Le graphique permet de visualiser la distribution des échantillons générés pour une variable spécifique, en l'occurrence la variable $\alpha_{12}$ .
+
+```{r}
+plot(l$chain[-burnin,][,4], type = "l", main = "")
+plot(density(l$chain[-burnin,][,4]), type = "l", main = "Conditional density of alpha12")
+```
+
+```{r}
+sprintf(" Pour alpha12, le taux d'acceptation est  : %s", l$acc_rates[4]/100)
+moy_alpha12 = mean(l$chain[,4])
+sprintf(" Pour alpha12, la moyenne empirique est : %s", moy_alpha12)
+std_alpha12 = sd(l$chain[,4])
+sprintf(" Pour alpha12, l'écart-type empirique est : %s", std_alpha12)
+```
+### Commentaire général : 
+
+- Les graphiques (par paire), ci-dessus, produits illustrent l'évolution de la chaîne de Markov associée aux coefficients $\alpha_0$,$\alpha_1$,$\alpha_2$,$\alpha_{12}$. Le premier graphique représente la trajectoire de la chaîne de Markov sous la forme d'un tracé de la valeur de alpha0 à chaque étape. Il est notable que la chaîne de Markov semble avoir convergé vers une valeur stable après environ 500 étapes.
+
+- Le deuxième graphique montre la densité de la distribution de probabilité des valeurs des $\alpha_i$ à la fin de la chaîne de Markov. Cette distribution est centrée autour de la valeur stable observée dans le premier graphique, ce qui suggère que cette valeur est une estimation raisonnable de la vraie valeur du coefficient $\alpha_i$.
+
+- Les résultats obtenus montrent que le taux d'acceptation des $\alpha_i$  varie entre 30% et 38%, ce qui est bon. De plus, la moyenne empirique et les écarts-type empiriques des $\alpha_i$ estimés suggèrent que les résultats obtenus sont conformes aux résultats théoriques attendus pour l'estimation bayésienne de ces coefficient.
+
+
+## $\sigma$
+
+Ce code est destiné à tracer deux graphiques qui permettent d'analyser la chaîne de Markov de Monte-Carlo (MCMC) générée pour l'estimation du paramètre $\sigma$.
+
+```{r}
+plot(l$chain[-burnin,][,5], type = "l", main = "")
+plot(density(l$chain[-burnin,][,5]), type = "l", main = "Conditional density of sigma")
+```
+
+```{r}
+moy_sigma = mean(sqrt(l$chain[,5]))
+sprintf("La moyenne empirique de sigma : %s", moy_sigma)
+std_sigma = sd(sqrt(l$chain[,5]))
+sprintf("L'écart-type empirique de sigma : %s", std_sigma)
+```
+
+### Comentaire : 
+
+Comme prévu, les moyennes et les écarts-types obtenus sont relativement proches  de ceux théoriques proposés par l’énoncé.
+
+# Convergence des chaînes de Markov pour les coefficients 
+
+Ce code regroupe les résultats des chaînes de Markov pour les coefficients $\alpha_0$, $\alpha_1$, $\alpha_2$, $\alpha_{12}$ et $\sigma$ dans un seul graphique. Pour chaque coefficient, deux graphiques sont tracés : la trace de la chaîne de Markov et la densité de probabilité des échantillons générés à partir de la chaîne. Le graphique permet de visualiser la convergence de la chaîne de Markov vers une distribution stationnaire pour chaque coefficient.
+
+
+```{r}
+text=c("alpha0", "alpha1", "alpha2", "alpha12", "sigma")
+par(mfrow = c(5, 2), mar = c(1, 6, 1, 6))
+for (j in 1:5){
+  plot(l$chain[-burnin,][,j], type = "l", main = "",ylab=text[j])
+  plot(density(l$chain[-burnin,][,j]), type = "l", main = "")
+}
+```
+
+## Étude des variations de quelques valeurs de $b$
+
+Ce code permet de tracer des graphiques de la densité des échantillons générés pour quatre valeurs différentes de la variable $b$, soit $b_1$,$b_5$,$b_{10}$ et $b_{15}$ . Les graphiques permettent de visualiser la distribution des échantillons générés pour chaque valeur de $b$. 
+
+```{r}
+text=c("b1", "b5", "b10", "b15")
+val = c(1,5,10,15)
+par(mfrow = c(4, 2), mar = c(1, 6, 1, 6))
+for (j in 1:4){
+  plot(l$b_chain[-burnin,][,val[j]], type = "l", main = "",ylab=text[j])
+  plot(density(l$b_chain[-burnin,][,val[j]]), type = "l", main = "")
+}
+```
+
+### Commetaire : 
+
+Il s'avère que les chaînes de $b$ se comportent normalement.
+
+# Inteprétation
+
+En se basant sur les moyennes empiriques précédemment calculées, on cherche à visualiser l'effet des variables $x_1$ et $x_2$ sur la probabilité de succès $\operatorname{logit}(p)$.
+
+```{r}
+moy_b = c(mean(l$b_chain[,1]))
+for (i in 2:21){
+  moy_b <- append(moy_b, mean(l$b_chain[,i]))
+}
+logitp = moy_alpha0 + moy_alpha1 * x1 + moy_alpha2 * x2 + moy_alpha12 * x1 * x2 + moy_b
+plot(logitp)
+```
+
+Après avoir tracé la fonction $\operatorname{logit}(p)$ en fonction de l'indice de l'échantillon, on observe que les échantillons semblent regroupés en plusieurs clusters. Pour mieux visualiser cette structure, nous allons utiliser l'algorithme de clustering k-means.
+
+Dans notre cas, nous allons appliquer l'algorithme de k-means sur les échantillons de $\operatorname{logit}(p)$ en utilisant les moyennes empiriques de $x_1$ et $x_2$ obtenues précédemment comme variables explicatives. Le nombre de clusters sera déterminé de manière empirique en observant la structure des clusters obtenus pour différents choix de k.
+
+
+```{r}
+index <- 1:21
+df <- data.frame(index, logitp)
+res_kmeans <- kmeans(df, centers = 4 , nstart = 1000)
+fviz_cluster(res_kmeans, data = df)
+```
+
+```{r}
+c1 = which(res_kmeans$cluster==1)
+c2 = which(res_kmeans$cluster==2)
+c3 = which(res_kmeans$cluster==3)
+c4 = which(res_kmeans$cluster==4)
+```
+
+```{r}
+x <- x1*x2
+x[c1]
+x[c2]
+x[c3]
+x[c4]
+```
+
+```{r}
+x1[c1]
+x1[c2]
+x1[c3]
+x1[c4]
+```
+
+```{r}
+x2[c1]
+x2[c2]
+x2[c3]
+x2[c4]
+```
+
+Les résultats du clustering révèlent que les échantillons se regroupent en quatre clusters distincts en fonction des valeurs de $x_1$ et $x_2$.
+- Le premier cluster correspond à l'association $x_1 = 0$ et $x_2 = 1$, c'est-à-dire pour les échantillons de type aegyptiao 75 et cucumber.
+- Le deuxième cluster correspond à l'association $x_1 = 1$ et $x_2 = 0$, c'est-à-dire pour les échantillons de type aegyptiao 73 et bean.
+- Le troisième cluster correspond à l'association $x_1 = 0$ et $x_2 = 0$, c'est-à-dire pour les échantillons de type aegyptiao 75 et bean.
+- Enfin, le quatrième cluster correspond à l'association $x_1 = 1$ et $x_2 = 1$, c'est-à-dire pour les échantillons de type aegyptiao 73 et cucumber.
+
+Ces résultats indiquent que la probabilité de germination varie en fonction du type de graine et des conditions environnementales. Les échantillons de type aegyptiao 75 ont une probabilité de germination plus élevée pour les graines de type cucumber, tandis que les échantillons de type aegyptiao 73 ont une probabilité de germination légèrement plus élevée pour les graines de type bean. Cependant, l'impact de ces facteurs sur la probabilité de germination n'est pas très drastique.
